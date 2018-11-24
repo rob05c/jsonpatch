@@ -364,3 +364,84 @@ func TestApplyObjReplaceNil(t *testing.T) {
 		t.Errorf("Apply obj.A.B.C expected *%+v actual *%+v", expected, actual)
 	}
 }
+
+// TestRemoveObj tests a 'remove' op on a value.
+func TestRemoveObj(t *testing.T) {
+	type B struct {
+		C int `json:"c"`
+		D int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeRemove,
+			Path: "/a/b/c",
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: 1,
+				D: 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C != 0 {
+		t.Errorf("Apply remove obj.A.B.C expected %+v actual %+v", 0, obj.A.B.C)
+	}
+	if obj.A.B.D != 2 {
+		t.Errorf("Apply obj.A.B.D expected %+v actual %+v", 2, obj.A.B.D)
+	}
+}
+
+// TestApplyObjRemoveNil tests an 'remove' op on a pointer.
+func TestApplyObjRemoveNil(t *testing.T) {
+	type B struct {
+		C *int `json:"c"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	expected := 42
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeRemove,
+			Path: "/a/b/c",
+		},
+	}
+
+	v := expected
+
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: &v,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C != nil {
+		t.Fatalf("Apply obj.A.B.C expected %+v actual *%+v", nil, *obj.A.B.C)
+	}
+}

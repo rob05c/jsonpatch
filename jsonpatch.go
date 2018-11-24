@@ -95,7 +95,14 @@ func Apply(patch JSONPatch, obj interface{}) error {
 			}
 			oPath.Set(reflect.ValueOf(patchOp.Value))
 		case OpTypeRemove:
-			return errors.New("not implemented")
+			oPath, err = getNextVal(lastPathPart, oPath, true)
+			if err != nil {
+				return errors.New("getting or creating last value in add op: " + err.Error())
+			}
+			if !oPath.CanSet() {
+				return errors.New("can't set value at path " + patchOp.Path)
+			}
+			oPath.Set(reflect.Zero(oPath.Type()))
 		case OpTypeReplace:
 			oPath, err = getNextVal(lastPathPart, oPath, false)
 			if err != nil {
@@ -177,6 +184,10 @@ func getNextVal(key string, obj reflect.Value, add bool) (reflect.Value, error) 
 	case reflect.Struct:
 		oType := obj.Type()
 		// TODO get field by toLower(name) if no tag exists, to match encoding/json pkg.
+
+		/*
+			To unmarshal JSON into a struct, Unmarshal matches incoming object keys to the keys used by Marshal (either the struct field name or its tag), preferring an exact match but also accepting a case-insensitive match. By default, object keys which don't have a corresponding struct field are ignored (see Decoder.DisallowUnknownFields for an alternative).
+		*/
 		for i := 0; i < obj.NumField(); i++ {
 			field := oType.Field(i)
 			tag := field.Tag
