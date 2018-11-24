@@ -1,11 +1,9 @@
 # jsonpatch
-Go JSON Patch library, for applying patches to objects.
-
-Implements RFC 6902, for applying JSON patches to Go objects.
+Go JSON Patch library, for applying RFC 6902 patches to Go objects.
 
 There are several existing Go JSON Patch libraries, but they either operate on maps, or bytes. If another library exists to apply patches directly to struct objects, I'm not aware of it.
 
-Note that for structures, certain operations are impossible. Thus, this library will return errors in excess of those defined by RFC 6902. Other operations are ambiguous, and have multiple valid options. This library tries to do whatever makes the most sense, per the Principle of Least Surprise.
+For Go structs, certain operations are impossible (for example, you can't add a field that doesn't exist). Thus, this library will return errors in excess of those defined by RFC 6902. Other operations are ambiguous, and have multiple valid options. This library tries to follow the Principle of Least Surprise.
 
 Specific Behavior:
 - A `remove` op on a pointer field sets it to `nil`.
@@ -18,9 +16,10 @@ Specific Behavior:
 - A `replace` op on a pointer field which is `nil` returns an error.
 
 # TODO
-- Ops: Remove, Replace, Move, Copy, Test
-- map
 - interfaces, where possible (e.g. replace is possible, but add is impossible)
+- array types (as opposed to Slices)
+- slice/array remove op
+- ops: Move, Copy, Test
 - benchmark, optimize
-- Array types (as opposed to Slices)
-- Get field name, if no tag exists (the same way `encoding/json` works)
+- get field name, if no tag exists (the same way `encoding/json` works)
+- support map keys which implement encoding.TextMarshaler

@@ -445,3 +445,172 @@ func TestApplyObjRemoveNil(t *testing.T) {
 		t.Fatalf("Apply obj.A.B.C expected %+v actual *%+v", nil, *obj.A.B.C)
 	}
 }
+
+func TestAddMap(t *testing.T) {
+	type A struct {
+		B map[string]int `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	expected := 42
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeAdd,
+			Path:  "/a/b/c",
+			Value: expected,
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: map[string]int{
+				"c": 1,
+				"d": 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B["c"] != expected {
+		t.Errorf(`Apply obj.A.B["c"] expected %+v actual %+v`, 42, obj.A.B["c"])
+	}
+}
+
+func TestAddNonexistentMap(t *testing.T) {
+	type A struct {
+		B map[string]int `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	expected := 42
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeAdd,
+			Path:  "/a/b/c",
+			Value: expected,
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: map[string]int{
+				"d": 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B["c"] != expected {
+		t.Errorf(`Apply obj.A.B["c"] expected %+v actual %+v`, 42, obj.A.B["c"])
+	}
+}
+
+func TestReplaceMap(t *testing.T) {
+	type A struct {
+		B map[string]int `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	expected := 42
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeReplace,
+			Path:  "/a/b/c",
+			Value: expected,
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: map[string]int{
+				"c": 1,
+				"d": 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B["c"] != expected {
+		t.Errorf(`Apply obj.A.B["c"] expected %+v actual %+v`, 42, obj.A.B["c"])
+	}
+}
+
+func TestBadReplaceMap(t *testing.T) {
+	type A struct {
+		B map[string]int `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeReplace,
+			Path:  "/a/b/c",
+			Value: 42,
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: map[string]int{
+				"d": 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err == nil {
+		t.Errorf(`Apply replace nonexistent obj.A.B["c"] expected error, actual %+v`, err)
+	}
+}
+
+func TestRemoveMapKey(t *testing.T) {
+	type A struct {
+		B map[string]int `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeRemove,
+			Path: "/a/b/c",
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: map[string]int{
+				"c": 1,
+				"d": 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if v, ok := obj.A.B["c"]; ok {
+		t.Errorf(`Apply obj.A.B["c"] expected: !ok, actual: %+v`, v)
+	}
+}
