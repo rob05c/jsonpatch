@@ -29,148 +29,58 @@ type JSONPatchOp struct {
 
 type JSONPatch []JSONPatchOp
 
-/*
-TODO:
-  interfaces
-  pointers
-  remove (pointers only?)
-  move, copy, test
-  benchmark, performance optimizations
-*/
-
-func Apply(patch JSONPatch, obj interface{}) error {
-	oVal := reflect.ValueOf(obj)
-
-	if oVal.Kind() != reflect.Ptr {
+func Apply(patch JSONPatch, realObj interface{}) error {
+	obj := reflect.ValueOf(realObj)
+	if obj.Kind() != reflect.Ptr {
 		return errors.New("object must be a pointer")
 	}
-	if oVal.IsNil() {
+	if obj.IsNil() {
 		return errors.New("object must not be nil")
 	}
-
-	oVal = reflect.Indirect(oVal)
-
+	obj = reflect.Indirect(obj)
 	for _, patchOp := range patch {
-		// oPath, err := getValAt(patchOp.Path, oVal)
-		// if err != nil {
-		// 	return err
-		// }
-
-		pathParts := strings.Split(patchOp.Path, "/")
-		if len(pathParts) < 1 {
-			return fmt.Errorf("malformed patch op path: %+v", pathParts)
-		}
-		lastPathPart := pathParts[len(pathParts)-1]
-
-		oPath, err := getValBefore(patchOp.Path, oVal)
-		if err != nil {
-			return errors.New("getValBefore: " + err.Error())
-		}
-		// fmt.Printf("DEBUG Apply oPath.Type().Name() '%+v'\n", oPath.Type().Name())
-
-		switch patchOp.Op {
-		case OpTypeAdd:
-			if oPath.Kind() == reflect.Map {
-				// map values aren't addressable, so they need special logic
-				if !oPath.CanSet() {
-					return errors.New("can't set value of map at path " + patchOp.Path)
-				}
-				oPathKey, err := ConvertKeyToType(lastPathPart, oPath.Type().Key())
-				if err != nil {
-					return err
-				}
-				oPath.SetMapIndex(oPathKey, reflect.ValueOf(patchOp.Value))
-			} else {
-				oPathVal, err := getNextVal(lastPathPart, oPath, true)
-				if err != nil {
-					return errors.New("getting or creating last value in add op: " + err.Error())
-				}
-
-				// fmt.Printf("DEBUG Apply reflect.TypeOf(patchOp.Value) %+v\n", reflect.TypeOf(patchOp.Value))
-				// fmt.Printf("DEBUG Apply oPathVal.Type().Name() '%+v'\n", oPathVal.Type().Name())
-				// fmt.Printf("DEBUG Apply oPathVal.Kind() '%+v'\n", oPathVal.Kind())
-				if oPathVal.Kind() == reflect.Ptr {
-					// fmt.Printf("DEBUG Apply oPathVal.Type().Elem().Kind() '%+v'\n", oPathVal.Type().Elem().Kind())
-					if oPathVal.IsNil() {
-						oPathVal.Set(reflect.New(oPathVal.Type().Elem()))
-					}
-					oPathVal = reflect.Indirect(oPathVal)
-				}
-
-				if !oPathVal.CanSet() {
-					return errors.New("can't set value at path " + patchOp.Path)
-				}
-				if oPathVal.Type() != reflect.TypeOf(patchOp.Value) {
-					// TODO add interface support
-					return fmt.Errorf("can't set object field '%+v' to patch value type %T\n", oPathVal.Type().Name(), patchOp.Value)
-				}
-				oPathVal.Set(reflect.ValueOf(patchOp.Value))
-			}
-		case OpTypeRemove:
-			// TODO add slice/array remove
-			if oPath.Kind() == reflect.Map {
-				// map values aren't addressable, so they need special logic
-				oPathKey, err := ConvertKeyToType(lastPathPart, oPath.Type().Key())
-				if err != nil {
-					return err
-				}
-				// TODO error if key doesn't exist, per RFC6902§4.2
-				oPath.SetMapIndex(oPathKey, reflect.Value{}) // deletes the key
-			} else {
-				oPathVal, err := getNextVal(lastPathPart, oPath, true)
-				if err != nil {
-					return errors.New("getting or creating last value in remove op: " + err.Error())
-				}
-				if !oPathVal.CanSet() {
-					return errors.New("can't set value at path " + patchOp.Path)
-				}
-				oPathVal.Set(reflect.Zero(oPathVal.Type()))
-			}
-		case OpTypeReplace:
-			if oPath.Kind() == reflect.Map {
-				// map values aren't addressable, so they need special logic
-				if !oPath.CanSet() {
-					return errors.New("can't set value of map at path " + patchOp.Path)
-				}
-				oPathKey, err := ConvertKeyToType(lastPathPart, oPath.Type().Key())
-				if err != nil {
-					return err
-				}
-				if oPath.MapIndex(oPathKey) == (reflect.Value{}) {
-					return errors.New("no value to replace at path " + patchOp.Path)
-				}
-				oPath.SetMapIndex(oPathKey, reflect.ValueOf(patchOp.Value))
-			} else {
-				oPath, err = getNextVal(lastPathPart, oPath, false)
-				if err != nil {
-					return errors.New("getting last value in add op: " + err.Error())
-				}
-				if oPath.Kind() == reflect.Ptr { // TODO: for loop? Allow multiple pointers?
-					oPath = reflect.Indirect(oPath)
-				}
-
-				if !oPath.CanSet() {
-					return errors.New("can't set value at path " + patchOp.Path)
-				}
-				if oPath.Type() != reflect.TypeOf(patchOp.Value) {
-					// fmt.Printf("DEBUG Apply reflect.TypeOf(patchOp.Value) %+v\n", reflect.TypeOf(patchOp.Value))
-					// fmt.Printf("DEBUG Apply oPath.Type().Name() '%+v'\n", oPath.Type().Name())
-					// TODO add interface support
-					return fmt.Errorf("can't set object field '%+v' to patch value type %T\n", oPath.Type().Name(), patchOp.Value)
-				}
-				oPath.Set(reflect.ValueOf(patchOp.Value))
-			}
-		case OpTypeMove:
-			return errors.New("not implemented")
-		case OpTypeCopy:
-			return errors.New("not implemented")
-		case OpTypeTest:
-			return errors.New("not implemented")
-		default:
-			return errors.New("unknown op type")
+		if err := applyOp(obj, patchOp); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
+func applyOp(obj reflect.Value, patchOp JSONPatchOp) error {
+	pathParts := strings.Split(patchOp.Path, "/")
+	if len(pathParts) < 1 {
+		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+	}
+	lastPathPart := pathParts[len(pathParts)-1]
+
+	obj, err := getValBefore(patchOp.Path, obj)
+	if err != nil {
+		return errors.New("getValBefore: " + err.Error())
+	}
+	// fmt.Printf("DEBUG Apply oPath.Type().Name() '%+v'\n", oPath.Type().Name())
+
+	switch patchOp.Op {
+	case OpTypeAdd:
+		if err := applyAdd(obj, lastPathPart, patchOp.Value); err != nil {
+			return err
+		}
+	case OpTypeRemove:
+		if err := applyRemove(obj, lastPathPart); err != nil {
+			return err
+		}
+	case OpTypeReplace:
+		if err := applyReplace(obj, lastPathPart, patchOp.Value); err != nil {
+			return err
+		}
+	case OpTypeMove:
+		return errors.New("not implemented")
+	case OpTypeCopy:
+		return errors.New("not implemented")
+	case OpTypeTest:
+		return errors.New("not implemented")
+	default:
+		return errors.New("unknown op type")
+	}
 	return nil
 }
 
@@ -338,4 +248,140 @@ func ConvertKeyToType(key string, keyType reflect.Type) (reflect.Value, error) {
 		// }
 		return reflect.Value{}, errors.New("map key type " + keyType.Kind().String() + " not supported; map keys must be strings, integers")
 	}
+}
+
+// applyAdd performs a JSON Patch add op to obj at pathToken with patchValue.
+func applyAdd(obj reflect.Value, pathToken string, patchVal interface{}) error {
+	if obj.Kind() == reflect.Map {
+		return applyAddMap(obj, pathToken, patchVal)
+	} else {
+		return applyAddGeneric(obj, pathToken, patchVal)
+	}
+}
+
+// applyAddMap performs a JSON Patch add op to obj at pathToken with patchValue.
+// Map values aren't addressable, so they need special logic
+func applyAddMap(obj reflect.Value, pathToken string, patchValue interface{}) error {
+	if !obj.CanSet() {
+		return errors.New("can't set value of map at path " + pathToken)
+	}
+	objKey, err := ConvertKeyToType(pathToken, obj.Type().Key())
+	if err != nil {
+		return err
+	}
+	obj.SetMapIndex(objKey, reflect.ValueOf(patchValue))
+	return nil
+}
+
+// applyAddMap performs a JSON Patch add op to obj at pathToken with patchValue.
+// This func applies to all objects, except maps, which should use applyAddMap
+func applyAddGeneric(obj reflect.Value, pathToken string, patchVal interface{}) error {
+	objVal, err := getNextVal(pathToken, obj, true)
+	if err != nil {
+		return errors.New("getting or creating last value in add op: " + err.Error())
+	}
+	// fmt.Printf("DEBUG Apply reflect.TypeOf(patchOp.Value) %+v\n", reflect.TypeOf(patchOp.Value))
+	// fmt.Printf("DEBUG Apply objVal.Type().Name() '%+v'\n", objVal.Type().Name())
+	// fmt.Printf("DEBUG Apply objVal.Kind() '%+v'\n", objVal.Kind())
+	if objVal.Kind() == reflect.Ptr {
+		// fmt.Printf("DEBUG Apply objVal.Type().Elem().Kind() '%+v'\n", objVal.Type().Elem().Kind())
+		if objVal.IsNil() {
+			objVal.Set(reflect.New(objVal.Type().Elem()))
+		}
+		objVal = reflect.Indirect(objVal)
+	}
+
+	if !objVal.CanSet() {
+		return errors.New("can't set value at path " + pathToken)
+	}
+	if objVal.Type() != reflect.TypeOf(patchVal) {
+		// TODO add interface support
+		return fmt.Errorf("can't set object field '%+v' to patch value type %T\n", objVal.Type().Name(), patchVal)
+	}
+	objVal.Set(reflect.ValueOf(patchVal))
+	return nil
+}
+
+// applyRemoveMap applies a JSON Patch remove op to the given object at the given path token.
+func applyRemove(obj reflect.Value, pathToken string) error {
+	// TODO add slice/array remove
+	if obj.Kind() == reflect.Map {
+		return applyRemoveMap(obj, pathToken)
+	} else {
+		return applyRemoveGeneric(obj, pathToken)
+	}
+}
+
+// applyRemoveMap applies a JSON Patch remove op to the given object at the given path token.
+// Map values aren't addressable, so they need special logic
+func applyRemoveMap(obj reflect.Value, pathToken string) error {
+	objKey, err := ConvertKeyToType(pathToken, obj.Type().Key())
+	if err != nil {
+		return err
+	}
+	// TODO error if key doesn't exist, per RFC6902§4.2
+	obj.SetMapIndex(objKey, reflect.Value{}) // deletes the key
+	return nil
+}
+
+// applyRemoveMap applies a JSON Patch remove op to the given object at the given path token.
+// Applies to all types except maps, which must call applyRemoveMap because they need special logic.
+func applyRemoveGeneric(obj reflect.Value, pathToken string) error {
+	objVal, err := getNextVal(pathToken, obj, true)
+	if err != nil {
+		return errors.New("getting or creating last value in remove op: " + err.Error())
+	}
+	if !objVal.CanSet() {
+		return errors.New("can't set value at path " + pathToken)
+	}
+	objVal.Set(reflect.Zero(objVal.Type()))
+	return nil
+}
+
+// applyAdd performs a JSON Patch add op to obj at pathToken with patchValue.
+func applyReplace(obj reflect.Value, pathToken string, patchVal interface{}) error {
+	if obj.Kind() == reflect.Map {
+		return applyReplaceMap(obj, pathToken, patchVal)
+	} else {
+		return applyReplaceGeneric(obj, pathToken, patchVal)
+	}
+
+}
+
+func applyReplaceMap(obj reflect.Value, pathToken string, patchVal interface{}) error {
+	// map values aren't addressable, so they need special logic
+	if !obj.CanSet() {
+		return errors.New("can't set value of map at path " + pathToken)
+	}
+	objKey, err := ConvertKeyToType(pathToken, obj.Type().Key())
+	if err != nil {
+		return err
+	}
+	if obj.MapIndex(objKey) == (reflect.Value{}) {
+		return errors.New("no value to replace at path " + pathToken)
+	}
+	obj.SetMapIndex(objKey, reflect.ValueOf(patchVal))
+	return nil
+}
+
+func applyReplaceGeneric(obj reflect.Value, pathToken string, patchVal interface{}) error {
+	obj, err := getNextVal(pathToken, obj, false)
+	if err != nil {
+		return errors.New("getting last value in add op: " + err.Error())
+	}
+	if obj.Kind() == reflect.Ptr { // TODO: for loop? Allow multiple pointers?
+		obj = reflect.Indirect(obj)
+	}
+
+	if !obj.CanSet() {
+		return errors.New("can't set value at path " + pathToken)
+	}
+	if obj.Type() != reflect.TypeOf(patchVal) {
+		// fmt.Printf("DEBUG Apply reflect.TypeOf(patchVal) %+v\n", reflect.TypeOf(patchVal))
+		// fmt.Printf("DEBUG Apply obj.Type().Name() '%+v'\n", obj.Type().Name())
+		// TODO add interface support
+		return fmt.Errorf("can't set object field '%+v' to patch value type %T\n", obj.Type().Name(), patchVal)
+	}
+	obj.Set(reflect.ValueOf(patchVal))
+	return nil
 }
