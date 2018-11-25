@@ -614,3 +614,71 @@ func TestRemoveMapKey(t *testing.T) {
 		t.Errorf(`Apply obj.A.B["c"] expected: !ok, actual: %+v`, v)
 	}
 }
+
+func TestApplyAddNilArr(t *testing.T) {
+	type ArrA struct {
+		B []string `json:"b"`
+	}
+
+	type TestArr struct {
+		A ArrA `json:"a"`
+	}
+
+	expected := []string{"apricot", "blackberry", "cherry"}
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeAdd,
+			Path:  "/a/b",
+			Value: expected,
+		},
+	}
+
+	obj := &TestArr{
+		A: ArrA{
+			B: nil,
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if !reflect.DeepEqual(obj.A.B, expected) {
+		t.Errorf("Apply obj.A.B expected %+v actual %+v", expected, obj.A.B)
+	}
+}
+
+func TestApplyReplaceNilArr(t *testing.T) {
+	// TODO Change to expect failure? RFC6902 says a replace where it doesn't exist should fail.
+	//      This is also inconsistent with map behavior, which does fail where it doesn't exist in compliance with RFC6902.
+	type ArrA struct {
+		B []string `json:"b"`
+	}
+
+	type TestArr struct {
+		A ArrA `json:"a"`
+	}
+
+	expected := []string{"apricot", "blackberry", "cherry"}
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:    OpTypeReplace,
+			Path:  "/a/b",
+			Value: expected,
+		},
+	}
+
+	obj := &TestArr{
+		A: ArrA{
+			B: nil,
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if !reflect.DeepEqual(obj.A.B, expected) {
+		t.Errorf("Apply obj.A.B expected %+v actual %+v", expected, obj.A.B)
+	}
+}
