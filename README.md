@@ -19,7 +19,7 @@ Specific Behavior:
 - interfaces, where possible (e.g. replace is possible, but add is impossible)
 - array types (as opposed to Slices)
 - slice/array remove op
-- ops: Move, Copy, Test
+- ops: Copy, Test
 - benchmark, optimize
 - get field name, if no tag exists (the same way `encoding/json` works)
 - support map keys which implement encoding.TextMarshaler

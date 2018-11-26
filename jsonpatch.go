@@ -47,33 +47,25 @@ func Apply(patch JSONPatch, realObj interface{}) error {
 }
 
 func applyOp(obj reflect.Value, patchOp JSONPatchOp) error {
-	pathParts := strings.Split(patchOp.Path, "/")
-	if len(pathParts) < 1 {
-		return fmt.Errorf("malformed patch op path: %+v", pathParts)
-	}
-	lastPathPart := pathParts[len(pathParts)-1]
-
-	obj, err := getValBefore(patchOp.Path, obj)
-	if err != nil {
-		return errors.New("getValBefore: " + err.Error())
-	}
 	// fmt.Printf("DEBUG Apply oPath.Type().Name() '%+v'\n", oPath.Type().Name())
 
 	switch patchOp.Op {
 	case OpTypeAdd:
-		if err := applyAdd(obj, lastPathPart, patchOp.Value); err != nil {
+		if err := applyAdd(obj, patchOp.Path, patchOp.Value); err != nil {
 			return err
 		}
 	case OpTypeRemove:
-		if err := applyRemove(obj, lastPathPart); err != nil {
+		if err := applyRemove(obj, patchOp.Path); err != nil {
 			return err
 		}
 	case OpTypeReplace:
-		if err := applyReplace(obj, lastPathPart, patchOp.Value); err != nil {
+		if err := applyReplace(obj, patchOp.Path, patchOp.Value); err != nil {
 			return err
 		}
 	case OpTypeMove:
-		return errors.New("not implemented")
+		if err := applyMove(obj, patchOp.Path, patchOp.From); err != nil {
+			return err
+		}
 	case OpTypeCopy:
 		return errors.New("not implemented")
 	case OpTypeTest:
@@ -251,7 +243,20 @@ func ConvertKeyToType(key string, keyType reflect.Type) (reflect.Value, error) {
 }
 
 // applyAdd performs a JSON Patch add op to obj at pathToken with patchValue.
-func applyAdd(obj reflect.Value, pathToken string, patchVal interface{}) error {
+func applyAdd(obj reflect.Value, path string, patchVal interface{}) error {
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) < 1 {
+		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+	}
+	lastPathPart := pathParts[len(pathParts)-1]
+
+	obj, err := getValBefore(path, obj)
+	if err != nil {
+		return errors.New("getValBefore: " + err.Error())
+	}
+
+	pathToken := lastPathPart
+
 	if obj.Kind() == reflect.Map {
 		return applyAddMap(obj, pathToken, patchVal)
 	} else {
@@ -303,7 +308,20 @@ func applyAddGeneric(obj reflect.Value, pathToken string, patchVal interface{}) 
 }
 
 // applyRemoveMap applies a JSON Patch remove op to the given object at the given path token.
-func applyRemove(obj reflect.Value, pathToken string) error {
+func applyRemove(obj reflect.Value, path string) error {
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) < 1 {
+		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+	}
+	lastPathPart := pathParts[len(pathParts)-1]
+
+	obj, err := getValBefore(path, obj)
+	if err != nil {
+		return errors.New("getValBefore: " + err.Error())
+	}
+
+	pathToken := lastPathPart
+
 	// TODO add slice/array remove
 	if obj.Kind() == reflect.Map {
 		return applyRemoveMap(obj, pathToken)
@@ -339,7 +357,20 @@ func applyRemoveGeneric(obj reflect.Value, pathToken string) error {
 }
 
 // applyAdd performs a JSON Patch add op to obj at pathToken with patchValue.
-func applyReplace(obj reflect.Value, pathToken string, patchVal interface{}) error {
+func applyReplace(obj reflect.Value, path string, patchVal interface{}) error {
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) < 1 {
+		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+	}
+	lastPathPart := pathParts[len(pathParts)-1]
+
+	obj, err := getValBefore(path, obj)
+	if err != nil {
+		return errors.New("getValBefore: " + err.Error())
+	}
+
+	pathToken := lastPathPart
+
 	if obj.Kind() == reflect.Map {
 		return applyReplaceMap(obj, pathToken, patchVal)
 	} else {
@@ -383,5 +414,84 @@ func applyReplaceGeneric(obj reflect.Value, pathToken string, patchVal interface
 		return fmt.Errorf("can't set object field '%+v' to patch value type %T\n", obj.Type().Name(), patchVal)
 	}
 	obj.Set(reflect.ValueOf(patchVal))
+	return nil
+}
+
+func applyMove(obj reflect.Value, path string, fromPath string) error {
+	if strings.HasPrefix(path, fromPath) {
+		if path == fromPath {
+			return nil // proper prefixes are allowed, per RFC RFC6902§4.4, and moving to the same place is a no-op.
+		}
+		return errors.New("move op 'from' cannot be a proper prefix of the 'path' to move into.")
+	}
+
+	fromPathParts := strings.Split(fromPath, "/")
+	if len(fromPathParts) < 1 {
+		return fmt.Errorf("malformed patch op from path: %+v", fromPathParts)
+	}
+	lastFromPathPart := fromPathParts[len(fromPathParts)-1]
+
+	fromObjBefore, err := getValBefore(fromPath, obj)
+	if err != nil {
+		return errors.New("getValBefore from: " + err.Error())
+	}
+
+	fromPathToken := lastFromPathPart
+
+	fromObj, err := getNextVal(fromPathToken, fromObjBefore, false)
+	if err != nil {
+		return errors.New("getting last from value in move op: " + err.Error())
+	}
+
+	// if obj.Kind() == reflect.Ptr { // TODO: for loop? Allow multiple pointers?
+	// 	obj = reflect.Indirect(obj)
+	// }
+
+	// if !fromObj.CanSet() {
+	// 	return errors.New("can't set value at from path " + fromPathToken)
+	// }
+
+	pathParts := strings.Split(path, "/")
+	if len(pathParts) < 1 {
+		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+	}
+	lastPathPart := pathParts[len(pathParts)-1]
+
+	obj, err = getValBefore(path, obj)
+	if err != nil {
+		return errors.New("getValBefore: " + err.Error())
+	}
+
+	pathToken := lastPathPart
+
+	obj, err = getNextVal(pathToken, obj, true)
+	if err != nil {
+		return errors.New("getting last from value in move op: " + err.Error())
+	}
+
+	if !obj.CanSet() {
+		return errors.New("move can't set value at path " + pathToken)
+	}
+
+	// if the 'from' is a pointer and the 'path' isn't, or vica-versa, make the 'from' match the 'path'.
+	if fromObj.Type().Kind() == reflect.Ptr && obj.Type().Kind() != reflect.Ptr {
+		fromObj = reflect.Indirect(fromObj)
+	} else if obj.Type().Kind() == reflect.Ptr && fromObj.Type().Kind() != reflect.Ptr {
+		// make a new pointer
+		// TODO test, with a map entry (which isn't addressable)
+		newFrom := reflect.New(fromObj.Type())
+		newFromVal := reflect.Indirect(newFrom)
+		newFromVal.Set(fromObj)
+		fromObj = newFromVal.Addr()
+	}
+
+	if fromObj.Type() != obj.Type() {
+		// TODO add interface support
+		return fmt.Errorf("can't set path '%+v' to from '%+v'\n", obj.Type().Name(), fromObj.Type().Name())
+	}
+	obj.Set(fromObj)
+
+	err = applyRemove(fromObjBefore, fromPathToken)
+
 	return nil
 }
