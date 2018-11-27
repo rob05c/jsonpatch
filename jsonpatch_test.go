@@ -949,3 +949,279 @@ func TestMoveFromPtr(t *testing.T) {
 		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", expected, obj.A.B.D)
 	}
 }
+
+func TestCopy(t *testing.T) {
+	type B struct {
+		C int `json:"c"`
+		D int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: 1,
+				D: 2,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C != 1 {
+		t.Errorf("Apply obj.A.B.C expected %+v actual %+v", 1, obj.A.B.C)
+	}
+	if obj.A.B.D != 1 {
+		t.Errorf("Apply obj.A.B.D expected %+v actual %+v", 1, obj.A.B.D)
+	}
+}
+
+func TestCopyPtrPathNil(t *testing.T) {
+	type B struct {
+		C *int `json:"c"`
+		D *int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	c := 1
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: &c,
+				D: nil,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C == nil {
+		t.Fatalf("Apply obj.A.B.C expected %+v actual %+v", "not nil", obj.A.B.C)
+	}
+	if *obj.A.B.C != c {
+		t.Errorf("Apply obj.A.B.C expected *%+v actual %+v", c, *obj.A.B.C)
+	}
+	if obj.A.B.D == nil {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", "not nil", obj.A.B.D)
+	}
+	if *obj.A.B.D != c {
+		t.Errorf("Apply obj.A.B.D expected *%+v actual %+v", c, *obj.A.B.D)
+	}
+	if obj.A.B.D != &c {
+		t.Errorf("Apply obj.A.B.D expected %+v actual %+v (new pointer)", &c, obj.A.B.D)
+	}
+}
+
+func TestCopyPtrPathNotNil(t *testing.T) {
+	type B struct {
+		C *int `json:"c"`
+		D *int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	c := 1
+	d := 2
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: &c,
+				D: &d,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C == nil {
+		t.Errorf("Apply obj.A.B.C expected %+v actual %+v", c, obj.A.B.C)
+	}
+	if obj.A.B.D == nil {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", "not nil", obj.A.B.D)
+	}
+	if *obj.A.B.C != c {
+		t.Errorf("Apply obj.A.B.D expected *%+v actual %+v", c, *obj.A.B.C)
+	}
+	if *obj.A.B.D != c {
+		t.Errorf("Apply obj.A.B.D expected *%+v actual %+v", c, *obj.A.B.D)
+	}
+	if obj.A.B.D != &c {
+		t.Errorf("Apply obj.A.B.D expected %+v actual %+v (new pointer)", &c, obj.A.B.D)
+	}
+}
+
+func TestCopyPtrFromNil(t *testing.T) {
+	type B struct {
+		C *int `json:"c"`
+		D *int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	d := 2
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: nil,
+				D: &d,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C != nil {
+		t.Errorf("Apply obj.A.B.C expected %+v actual %+v", nil, obj.A.B.C)
+	}
+	if obj.A.B.D != nil {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", nil, obj.A.B.D)
+	}
+}
+
+func TestCopyPathPtr(t *testing.T) {
+	type B struct {
+		C int  `json:"c"`
+		D *int `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	expected := 42
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: expected,
+				D: nil,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C != expected {
+		t.Errorf("Apply obj.A.B.C expected %+v actual %+v", expected, obj.A.B.C)
+	}
+	if obj.A.B.D == nil {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", "not nil", obj.A.B.D)
+	}
+	if *obj.A.B.D != expected {
+		t.Fatalf("Apply obj.A.B.D val expected %+v actual %+v", expected, *obj.A.B.D)
+	}
+}
+
+func TestCopyFromPtr(t *testing.T) {
+	type B struct {
+		C *int `json:"c"`
+		D int  `json:"d"`
+	}
+	type A struct {
+		B B `json:"b"`
+	}
+	type TestObj struct {
+		A A `json:"a"`
+	}
+
+	patch := JSONPatch{
+		JSONPatchOp{
+			Op:   OpTypeCopy,
+			Path: "/a/b/d",
+			From: "/a/b/c",
+		},
+	}
+
+	expected := 42
+	obj := &TestObj{
+		A: A{
+			B: B{
+				C: &expected,
+				D: 0,
+			},
+		},
+	}
+
+	if err := Apply(patch, obj); err != nil {
+		t.Fatalf("%+v", err)
+	}
+
+	if obj.A.B.C == nil {
+		t.Errorf("Apply obj.A.B.C expected %+v actual %+v", "not nil", obj.A.B.C)
+	}
+	if *obj.A.B.C != expected {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", expected, *obj.A.B.C)
+	}
+	if obj.A.B.D != expected {
+		t.Fatalf("Apply obj.A.B.D expected %+v actual %+v", expected, obj.A.B.D)
+	}
+}

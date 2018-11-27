@@ -67,7 +67,9 @@ func applyOp(obj reflect.Value, patchOp JSONPatchOp) error {
 			return err
 		}
 	case OpTypeCopy:
-		return errors.New("not implemented")
+		if err := applyCopy(obj, patchOp.Path, patchOp.From); err != nil {
+			return err
+		}
 	case OpTypeTest:
 		return errors.New("not implemented")
 	default:
@@ -417,30 +419,37 @@ func applyReplaceGeneric(obj reflect.Value, pathToken string, patchVal interface
 	return nil
 }
 
-func applyMove(obj reflect.Value, path string, fromPath string) error {
+func applyCopy(obj reflect.Value, path string, fromPath string) error {
+	_, _, err := applyCopyReturningObjs(obj, path, fromPath)
+	return err
+}
+
+// applyCopyReturningObjs applies the copy, and returns the object before the fromPath object, and the last token of fromPath, along with any error
+// If fromPath is a subpath of the path, the returned value and token will be empty.
+func applyCopyReturningObjs(obj reflect.Value, path string, fromPath string) (reflect.Value, string, error) {
 	if strings.HasPrefix(path, fromPath) {
 		if path == fromPath {
-			return nil // proper prefixes are allowed, per RFC RFC6902§4.4, and moving to the same place is a no-op.
+			return reflect.Value{}, "", nil // proper prefixes are allowed, per RFC RFC6902§4.4, and moving to the same place is a no-op.
 		}
-		return errors.New("move op 'from' cannot be a proper prefix of the 'path' to move into.")
+		return reflect.Value{}, "", errors.New("move op 'from' cannot be a proper prefix of the 'path' to move into.")
 	}
 
 	fromPathParts := strings.Split(fromPath, "/")
 	if len(fromPathParts) < 1 {
-		return fmt.Errorf("malformed patch op from path: %+v", fromPathParts)
+		return reflect.Value{}, "", fmt.Errorf("malformed patch op from path: %+v", fromPathParts)
 	}
 	lastFromPathPart := fromPathParts[len(fromPathParts)-1]
 
 	fromObjBefore, err := getValBefore(fromPath, obj)
 	if err != nil {
-		return errors.New("getValBefore from: " + err.Error())
+		return reflect.Value{}, "", errors.New("getValBefore from: " + err.Error())
 	}
 
 	fromPathToken := lastFromPathPart
 
 	fromObj, err := getNextVal(fromPathToken, fromObjBefore, false)
 	if err != nil {
-		return errors.New("getting last from value in move op: " + err.Error())
+		return reflect.Value{}, "", errors.New("getting last from value in move op: " + err.Error())
 	}
 
 	// if obj.Kind() == reflect.Ptr { // TODO: for loop? Allow multiple pointers?
@@ -453,24 +462,24 @@ func applyMove(obj reflect.Value, path string, fromPath string) error {
 
 	pathParts := strings.Split(path, "/")
 	if len(pathParts) < 1 {
-		return fmt.Errorf("malformed patch op path: %+v", pathParts)
+		return reflect.Value{}, "", fmt.Errorf("malformed patch op path: %+v", pathParts)
 	}
 	lastPathPart := pathParts[len(pathParts)-1]
 
 	obj, err = getValBefore(path, obj)
 	if err != nil {
-		return errors.New("getValBefore: " + err.Error())
+		return reflect.Value{}, "", errors.New("getValBefore: " + err.Error())
 	}
 
 	pathToken := lastPathPart
 
 	obj, err = getNextVal(pathToken, obj, true)
 	if err != nil {
-		return errors.New("getting last from value in move op: " + err.Error())
+		return reflect.Value{}, "", errors.New("getting last from value in move op: " + err.Error())
 	}
 
 	if !obj.CanSet() {
-		return errors.New("move can't set value at path " + pathToken)
+		return reflect.Value{}, "", errors.New("move can't set value at path " + pathToken)
 	}
 
 	// if the 'from' is a pointer and the 'path' isn't, or vica-versa, make the 'from' match the 'path'.
@@ -487,11 +496,23 @@ func applyMove(obj reflect.Value, path string, fromPath string) error {
 
 	if fromObj.Type() != obj.Type() {
 		// TODO add interface support
-		return fmt.Errorf("can't set path '%+v' to from '%+v'\n", obj.Type().Name(), fromObj.Type().Name())
+		return reflect.Value{}, "", fmt.Errorf("can't set path '%+v' to from '%+v'\n", obj.Type().Name(), fromObj.Type().Name())
 	}
 	obj.Set(fromObj)
 
-	err = applyRemove(fromObjBefore, fromPathToken)
+	return fromObjBefore, fromPathToken, nil
+}
 
+func applyMove(obj reflect.Value, path string, fromPath string) error {
+	fromObjBefore, fromPathToken, err := applyCopyReturningObjs(obj, path, fromPath)
+	if err != nil {
+		return err
+	}
+	if fromPathToken == "" {
+		return err // empty token from applyCopyReturningObjs means fromPath is a subpath of path, so nothing was moved and we don't need to remove.
+	}
+	if err := applyRemove(fromObjBefore, fromPathToken); err != nil {
+		return err
+	}
 	return nil
 }
